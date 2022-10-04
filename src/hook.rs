@@ -1,24 +1,61 @@
 use std::{fs::File, io::{BufReader, BufRead}};
 use crate::cli::Cli;
 use regex::Regex;
+use colored::*;
 
 
 pub fn hook(cli: Cli) {
-    let pattern = Regex::new(&cli.pattern).unwrap();
+    let mut pat: String = cli.pattern;
+    if cli.whole_word {
+        let mut whole_word_regex = String::from("\\b");
+        whole_word_regex.push_str(&pat);
+        whole_word_regex.push_str("\\b");
+        pat = whole_word_regex;
+    }
+    if cli.ignore_case {
+        let mut ignore_case_regex = String::from("(?i)");
+        ignore_case_regex.push_str(&pat);
+        pat = ignore_case_regex;
+    }
+    let pattern = Regex::new(&pat).unwrap();
     let source = File::open(&cli.source).expect("Invalid file.");
     let reader = BufReader::new(source);
 
+    let mut count: usize = 0;
+
     for (i, line) in reader.lines().enumerate() {
-        let line = line.expect("Error reading file.");
-        match pattern.find(&line) {
-            Some(matched) => {
-                let mut matched_word = String::from("\x1b[93m");
-                matched_word.push_str(matched.as_str());
-                matched_word.push_str("\x1b[0m");
-                let colored_line = pattern.replace_all(&line, matched_word);
-                println!("{}: {}", i+1, colored_line);
+        let mut line = line.expect("Error reading file.");
+        match pattern.is_match(&line) {
+            true => {
+                count += 1;
+                if cli.count == true {
+                    continue;
+                }
+                if cli.number_line {
+                    print!("{}: ", i);
+                }
+                if cli.pattern_highlighter {
+                    print_line_pattern_highlighted(&pattern, &mut line);
+                } else {
+                    println!("{}", &line);
+                }
             },
-            None => (),
+            false => (),
         }
+    }
+
+    if cli.count == true {
+        println!("{}", count);
+    }
+}
+
+fn print_line_pattern_highlighted(pattern: &Regex, line: &mut String) {
+    match pattern.find(&line) {
+        Some(mat) => {
+            print!("{}", &line[0..mat.start()]);
+            print!("{}", &line[mat.start()..mat.end()].cyan());
+            print_line_pattern_highlighted(pattern, &mut line[mat.end()..].to_string());
+        },
+        None => println!("{}", line),
     }
 }
